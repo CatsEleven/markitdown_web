@@ -1,0 +1,10 @@
+[project]
+name = "markitdown-web"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "docling>=2.137.0",
+    "markitdown[pdf]>=0.1.8",
+]
