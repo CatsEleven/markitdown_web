@@ -14,7 +14,7 @@
   * { box-sizing: border-box; }
   body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--fg);
     font:15px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; }
-  aside { width:300px; flex:none; background:var(--side); border-right:1px solid var(--border);
+  aside { width:300px; min-width:180px; max-width:70vw; flex:none; background:var(--side); border-right:1px solid var(--border);
     padding:16px; display:flex; flex-direction:column; gap:14px; overflow:auto; }
   h1 { font-size:16px; margin:0; }
   h2 { font-size:12px; margin:0 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
@@ -34,7 +34,8 @@
   #files li:hover { background:var(--border); }
   #files li.active { background:var(--accent); color:#fff; }
   .x { opacity:.5; flex:none; } .x:hover { opacity:1; color:#d1242f; }
-  .badge { font-size:11px; opacity:.7; flex:none; }
+  #resizer { width:5px; margin-left:-3px; flex:none; cursor:col-resize; z-index:2; }
+  #resizer:hover, #resizer.drag { background:var(--accent); opacity:.5; }
   main { flex:1; overflow:auto; position:relative; }
   #bar { position:sticky; top:0; display:flex; gap:8px; align-items:center; padding:8px 24px;
     background:var(--bg); border-bottom:1px solid var(--border); z-index:1; }
@@ -45,7 +46,7 @@
   .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--border);
     border-top-color:var(--accent); border-radius:50%; animation:s 1s linear infinite; vertical-align:-2px; margin-right:8px; }
   @keyframes s { to { transform:rotate(360deg); } }
-  @media (max-width:720px) { body { flex-direction:column; height:auto; } aside { width:auto; border-right:0; border-bottom:1px solid var(--border); } }
+  @media (max-width:720px) { #resizer { display:none; } body { flex-direction:column; height:auto; } aside { width:auto; border-right:0; border-bottom:1px solid var(--border); } }
 </style>
 </head>
 <body>
@@ -68,6 +69,7 @@
     <ul id="files"></ul>
   </div>
 </aside>
+<div id="resizer"></div>
 <main>
   <div id="bar" hidden>
     <span id="title"></span>
@@ -138,7 +140,7 @@ async function loadFiles() {
   for (const f of list) {
     const li = document.createElement("li");
     li.className = f.name === current ? "active" : "";
-    li.innerHTML = `<span></span><span class="badge">${f.converted ? "md済" : ""}</span><span class="x" title="削除">✕</span>`;
+    li.innerHTML = `<span></span><span class="x" title="削除">✕</span>`;
     li.firstChild.textContent = f.name;
     li.querySelector(".x").onclick = e => { e.stopPropagation(); removeFile(f.name); };
     li.onclick = () => openFile(f.name);
@@ -156,6 +158,17 @@ $("urlForm").onsubmit = e => { e.preventDefault(); const url = $("url").value.tr
   run(url, () => fetch("/api/convert-url", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url}) })); };
 $("toggle").onclick = () => { showRaw = !showRaw; applyView(); };
 $("delete").onclick = () => current && removeFile(current);
+(() => {
+  const side = document.querySelector("aside"), rz = $("resizer");
+  const saved = localStorage.getItem("sideW"); if (saved) side.style.width = saved + "px";
+  rz.onpointerdown = e => {
+    rz.setPointerCapture(e.pointerId); rz.classList.add("drag");
+    document.body.style.userSelect = "none";
+    rz.onpointermove = ev => { side.style.width = Math.max(180, Math.min(ev.clientX, innerWidth * .7)) + "px"; };
+    rz.onpointerup = () => { rz.onpointermove = rz.onpointerup = null; rz.classList.remove("drag");
+      document.body.style.userSelect = ""; localStorage.setItem("sideW", parseInt(side.style.width)); };
+  };
+})();
 loadFiles();
 </script>
 </body>
