@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PDF → Markdown</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.6.1/github-markdown.css">
 <style>
   :root { --bg:#fff; --fg:#1f2328; --muted:#656d76; --border:#d0d7de; --side:#f6f8fa; --accent:#0969da; --code:#f0f2f4; }
   @media (prefers-color-scheme: dark) {
@@ -32,6 +33,7 @@
     gap:8px; word-break:break-all; }
   #files li:hover { background:var(--border); }
   #files li.active { background:var(--accent); color:#fff; }
+  .x { opacity:.5; flex:none; } .x:hover { opacity:1; color:#d1242f; }
   .badge { font-size:11px; opacity:.7; flex:none; }
   main { flex:1; overflow:auto; position:relative; }
   #bar { position:sticky; top:0; display:flex; gap:8px; align-items:center; padding:8px 24px;
@@ -39,15 +41,7 @@
   #title { flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #status { padding:24px; color:var(--muted); }
   #status.err { color:#d1242f; }
-  #md { max-width:860px; margin:0 auto; padding:24px; }
-  #md img { max-width:100%; }
-  #md table { border-collapse:collapse; display:block; overflow:auto; }
-  #md th, #md td { border:1px solid var(--border); padding:4px 10px; }
-  #md pre, #md code { background:var(--code); border-radius:6px; }
-  #md pre { padding:12px; overflow:auto; }
-  #md code { padding:.1em .3em; }
-  #md pre code { padding:0; }
-  #md blockquote { margin:0; padding-left:1em; border-left:4px solid var(--border); color:var(--muted); }
+  #md { max-width:900px; margin:0 auto; padding:32px 24px; }
   .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--border);
     border-top-color:var(--accent); border-radius:50%; animation:s 1s linear infinite; vertical-align:-2px; margin-right:8px; }
   @keyframes s { to { transform:rotate(360deg); } }
@@ -78,10 +72,10 @@
   <div id="bar" hidden>
     <span id="title"></span>
     <button id="toggle">Markdown</button>
-    <button id="reconvert">再変換</button>
+    <button id="delete">削除</button>
   </div>
   <div id="status">PDFを選択してください。</div>
-  <article id="md" hidden></article>
+  <article id="md" class="markdown-body" hidden></article>
   <pre id="raw" hidden style="padding:24px;white-space:pre-wrap;margin:0"></pre>
 </main>
 
@@ -128,7 +122,15 @@ async function run(label, req) {
 
 const upload = f => run(f.name, () => { const fd = new FormData(); fd.append("file", f);
   return fetch("/api/convert", { method:"POST", body:fd }); });
-const openFile = (n, force) => run(n, () => fetch(`/api/convert/${encodeURIComponent(n)}?force=${!!force}`, { method:"POST" }));
+const openFile = n => run(n, () => fetch(`/api/convert/${encodeURIComponent(n)}`, { method:"POST" }));
+
+async function removeFile(n) {
+  if (!confirm(`${n} と対応するmarkdownを削除しますか？`)) return;
+  const r = await fetch(`/api/files/${encodeURIComponent(n)}`, { method:"DELETE" });
+  if (!r.ok) return setStatus("削除に失敗しました", true);
+  if (n === current) { current = null; $("bar").hidden = true; setStatus("削除しました。"); }
+  loadFiles();
+}
 
 async function loadFiles() {
   const list = await (await fetch("/api/files")).json();
@@ -136,8 +138,9 @@ async function loadFiles() {
   for (const f of list) {
     const li = document.createElement("li");
     li.className = f.name === current ? "active" : "";
-    li.innerHTML = `<span></span><span class="badge">${f.converted ? "md済" : ""}</span>`;
+    li.innerHTML = `<span></span><span class="badge">${f.converted ? "md済" : ""}</span><span class="x" title="削除">✕</span>`;
     li.firstChild.textContent = f.name;
+    li.querySelector(".x").onclick = e => { e.stopPropagation(); removeFile(f.name); };
     li.onclick = () => openFile(f.name);
     $("files").append(li);
   }
@@ -152,7 +155,7 @@ $("drop").ondrop = e => { e.preventDefault(); $("drop").classList.remove("over")
 $("urlForm").onsubmit = e => { e.preventDefault(); const url = $("url").value.trim();
   run(url, () => fetch("/api/convert-url", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url}) })); };
 $("toggle").onclick = () => { showRaw = !showRaw; applyView(); };
-$("reconvert").onclick = () => current && openFile(current, true);
+$("delete").onclick = () => current && removeFile(current);
 loadFiles();
 </script>
 </body>

@@ -63,6 +63,16 @@ def list_files():
     return items
 
 
+@app.delete("/api/files/{name}")
+def delete_file(name: str):
+    pdf = INPUTS / safe_name(name)
+    if not pdf.is_file():
+        raise HTTPException(404, "PDFが見つかりません")
+    pdf.unlink()
+    (OUTPUTS / f"{pdf.stem}.md").unlink(missing_ok=True)
+    return {"deleted": pdf.name}
+
+
 @app.post("/api/convert")
 def convert_upload(file: UploadFile = File(...)):
     dest = INPUTS / safe_name(file.filename or "document.pdf")
