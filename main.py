@@ -4,7 +4,10 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import httpx
-from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling_core.types.doc import ImageRefMode
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,9 +30,12 @@ def convert_pdf(pdf: Path) -> str:
     global _converter
     with _lock:
         if _converter is None:
-            _converter = DocumentConverter()
+            opts = PdfPipelineOptions(generate_picture_images=True, images_scale=2.0)
+            _converter = DocumentConverter(
+                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
+            )
         result = _converter.convert(pdf)
-        md = result.document.export_to_markdown()
+        md = result.document.export_to_markdown(image_mode=ImageRefMode.EMBEDDED)
     (OUTPUTS / f"{pdf.stem}.md").write_text(md, encoding="utf-8")
     return md
 
