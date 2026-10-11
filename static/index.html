@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF → Markdown</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --muted:#656d76; --border:#d0d7de; --side:#f6f8fa; --accent:#0969da; --code:#f0f2f4; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --border:#30363d; --side:#161b22; --accent:#58a6ff; --code:#1b222b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; height:100vh; display:flex; background:var(--bg); color:var(--fg);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; }
+  aside { width:300px; flex:none; background:var(--side); border-right:1px solid var(--border);
+    padding:16px; display:flex; flex-direction:column; gap:14px; overflow:auto; }
+  h1 { font-size:16px; margin:0; }
+  h2 { font-size:12px; margin:0 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  #drop { border:2px dashed var(--border); border-radius:8px; padding:20px 10px; text-align:center;
+    color:var(--muted); cursor:pointer; }
+  #drop.over { border-color:var(--accent); color:var(--accent); }
+  .row { display:flex; gap:6px; }
+  input[type=text] { flex:1; min-width:0; padding:6px 8px; border:1px solid var(--border);
+    border-radius:6px; background:var(--bg); color:var(--fg); }
+  button { padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg);
+    color:var(--fg); cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:wait; }
+  #files { list-style:none; margin:0; padding:0; }
+  #files li { padding:6px 8px; border-radius:6px; cursor:pointer; display:flex; justify-content:space-between;
+    gap:8px; word-break:break-all; }
+  #files li:hover { background:var(--border); }
+  #files li.active { background:var(--accent); color:#fff; }
+  .badge { font-size:11px; opacity:.7; flex:none; }
+  main { flex:1; overflow:auto; position:relative; }
+  #bar { position:sticky; top:0; display:flex; gap:8px; align-items:center; padding:8px 24px;
+    background:var(--bg); border-bottom:1px solid var(--border); z-index:1; }
+  #title { flex:1; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #status { padding:24px; color:var(--muted); }
+  #status.err { color:#d1242f; }
+  #md { max-width:860px; margin:0 auto; padding:24px; }
+  #md img { max-width:100%; }
+  #md table { border-collapse:collapse; display:block; overflow:auto; }
+  #md th, #md td { border:1px solid var(--border); padding:4px 10px; }
+  #md pre, #md code { background:var(--code); border-radius:6px; }
+  #md pre { padding:12px; overflow:auto; }
+  #md code { padding:.1em .3em; }
+  #md pre code { padding:0; }
+  #md blockquote { margin:0; padding-left:1em; border-left:4px solid var(--border); color:var(--muted); }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--border);
+    border-top-color:var(--accent); border-radius:50%; animation:s 1s linear infinite; vertical-align:-2px; margin-right:8px; }
+  @keyframes s { to { transform:rotate(360deg); } }
+  @media (max-width:720px) { body { flex-direction:column; height:auto; } aside { width:auto; border-right:0; border-bottom:1px solid var(--border); } }
+</style>
+</head>
+<body>
+<aside>
+  <h1>PDF → Markdown</h1>
+  <div>
+    <h2>アップロード</h2>
+    <div id="drop">PDFをドロップ<br>またはクリックして選択</div>
+    <input id="picker" type="file" accept="application/pdf,.pdf" hidden>
+  </div>
+  <div>
+    <h2>URLから</h2>
+    <form id="urlForm" class="row">
+      <input id="url" type="text" placeholder="https://…/paper.pdf" required>
+      <button>変換</button>
+    </form>
+  </div>
+  <div>
+    <h2>inputs 内のPDF</h2>
+    <ul id="files"></ul>
+  </div>
+</aside>
+<main>
+  <div id="bar" hidden>
+    <span id="title"></span>
+    <button id="toggle">Markdown</button>
+    <button id="reconvert">再変換</button>
+  </div>
+  <div id="status">PDFを選択してください。</div>
+  <article id="md" hidden></article>
+  <pre id="raw" hidden style="padding:24px;white-space:pre-wrap;margin:0"></pre>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let current = null, showRaw = false, rawText = "";
+
+function setStatus(html, err) {
+  $("status").hidden = false; $("status").className = err ? "err" : "";
+  $("status").innerHTML = html; $("md").hidden = $("raw").hidden = true;
+}
+
+function render(data) {
+  current = data.name; rawText = data.markdown;
+  $("bar").hidden = false; $("title").textContent = data.name + (data.cached ? "（変換済み）" : "");
+  $("status").hidden = true;
+  $("md").innerHTML = DOMPurify.sanitize(marked.parse(rawText));
+  if (window.renderMathInElement) {
+    renderMathInElement($("md"), { throwOnError:false, delimiters:[
+      {left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}]});
+  }
+  $("raw").textContent = rawText;
+  applyView(); loadFiles();
+}
+function applyView() {
+  $("md").hidden = showRaw; $("raw").hidden = !showRaw;
+  $("toggle").textContent = showRaw ? "レンダリング" : "Markdown";
+}
+
+async function run(label, req) {
+  setStatus(`<span class="spin"></span>${label} を変換中…（初回はモデル読み込みで時間がかかります）`);
+  document.querySelectorAll("button").forEach(b => b.disabled = true);
+  try {
+    const r = await req();
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+    render(await r.json());
+  } catch (e) { setStatus("エラー: " + e.message, true); }
+  finally { document.querySelectorAll("button").forEach(b => b.disabled = false); }
+}
+
+const upload = f => run(f.name, () => { const fd = new FormData(); fd.append("file", f);
+  return fetch("/api/convert", { method:"POST", body:fd }); });
+const openFile = (n, force) => run(n, () => fetch(`/api/convert/${encodeURIComponent(n)}?force=${!!force}`, { method:"POST" }));
+
+async function loadFiles() {
+  const list = await (await fetch("/api/files")).json();
+  $("files").innerHTML = "";
+  for (const f of list) {
+    const li = document.createElement("li");
+    li.className = f.name === current ? "active" : "";
+    li.innerHTML = `<span></span><span class="badge">${f.converted ? "md済" : ""}</span>`;
+    li.firstChild.textContent = f.name;
+    li.onclick = () => openFile(f.name);
+    $("files").append(li);
+  }
+}
+
+$("drop").onclick = () => $("picker").click();
+$("picker").onchange = e => e.target.files[0] && upload(e.target.files[0]);
+$("drop").ondragover = e => { e.preventDefault(); $("drop").classList.add("over"); };
+$("drop").ondragleave = () => $("drop").classList.remove("over");
+$("drop").ondrop = e => { e.preventDefault(); $("drop").classList.remove("over");
+  e.dataTransfer.files[0] && upload(e.dataTransfer.files[0]); };
+$("urlForm").onsubmit = e => { e.preventDefault(); const url = $("url").value.trim();
+  run(url, () => fetch("/api/convert-url", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url}) })); };
+$("toggle").onclick = () => { showRaw = !showRaw; applyView(); };
+$("reconvert").onclick = () => current && openFile(current, true);
+loadFiles();
+</script>
+</body>
+</html>
